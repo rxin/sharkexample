@@ -1,0 +1,88 @@
+#!/bin/bash
+
+export SCALA_VERSION=2.9.3
+
+# Figure out where the framework is installed
+PROJECTDIR="$(cd `dirname $0`; pwd)"
+
+
+if [ "x$SCALA_HOME" == "x" ] ; then
+  echo "No SCALA_HOME specified. Please set SCALA_HOME."
+  exit 1
+fi
+
+if [ ! -f "$SCALA_HOME/lib/scala-library.jar" ] ; then
+  echo "Cannot find $SCALA_HOME/lib/scala-library.jar."
+  echo "Are you sure your SCALA_HOME is set correctly?"
+  echo "SCALA_HOME = $SCALA_HOME"
+  exit 1
+fi
+
+# Hive related section.
+if [ "x$HIVE_HOME" == "x" ] ; then
+    echo "No HIVE_HOME specified. Please set HIVE_HOME."
+    exit 1
+fi
+
+if [ ! -f $HIVE_HOME/lib/hive-exec-0*.jar ] ; then
+  echo "Cannot find $HIVE_HOME/lib/hive-exec-0.9.0.jar."
+  echo "Are you sure your HIVE_HOME is set correctly?"
+  echo "HIVE_HOME = $HIVE_HOME"
+  exit 1
+fi
+
+CLASSPATH="$PROJECTDIR/conf"
+
+if [ -n "$MASTER" ] ; then
+  if [ -z $SPARK_HOME ] ; then
+    echo "No SPARK_HOME specified. Please set SPARK_HOME for cluster mode."
+    exit 1
+  fi
+  if [ -z $HADOOP_HOME ] ; then
+    echo "No HADOOP_HOME specified. Please set HADOOP_HOME for cluster mode."
+    exit 1
+  fi
+  CLASSPATH+=:"$HADOOP_HOME/conf"
+fi
+
+for jar in `find $PROJECTDIR/lib -name '*jar'`; do
+  CLASSPATH+=:$jar
+done
+for jar in `find $PROJECTDIR/lib_managed/jars -name '*jar'`; do
+  CLASSPATH+=:$jar
+done
+for jar in `find $PROJECTDIR/lib_managed/bundles -name '*jar'`; do
+  CLASSPATH+=:$jar
+done
+
+PROJECT_CLASSES="$PROJECTDIR/target/scala-$SCALA_VERSION/classes"
+if [ -d "$PROJECT_CLASSES" ] ; then
+  CLASSPATH+=":$PROJECT_CLASSES"
+else
+  echo "Cannot find either compiled classes or compiled jar package for this project."
+  echo "Have you compiled this project?"
+  exit 1
+fi
+
+CLASSPATH+=":$PROJECTDIR/target/scala-$SCALA_VERSION/test-classes"
+
+# Add Hive jars.
+for jar in `find $HIVE_HOME/lib -name '*jar'`; do
+  # Ignore the logging library since it has already been included with the Spark jar.
+  if [[ "$jar" != *slf4j* ]]; then
+    CLASSPATH+=:$jar
+  fi
+done
+
+export CLASSPATH
+export SPARK_CLASSPATH="$CLASSPATH"
+
+
+# Set JAVA_OPTS to be able to load native libraries and to set heap size
+JAVA_OPTS+="$SPARK_JAVA_OPTS"
+JAVA_OPTS+=" -Djava.library.path=$SPARK_LIBRARY_PATH"
+JAVA_OPTS+=" -Xms2g -Xmx2g -XX:MaxPermSize=256m "
+export JAVA_OPTS
+
+SCALA=${SCALA_HOME}/bin/scala
+$SCALA -cp $CLASSPATH $@
